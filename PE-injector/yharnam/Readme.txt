@@ -1,8 +1,7 @@
 ==================================================
          PROJET MALWARE - INJECTION DE CODE
 ==================================================
-Matthieu Da Cruz
-Thomas Fedorawiez
+
 ==================================================
 MODALITÉS DE COMPILATION
 ==================================================
@@ -92,4 +91,5 @@ Persistence added.
 
 LIMITATIONS:
 - Ne fonctionne qu'en 64 bits
+
 - Payload basique (message box)
