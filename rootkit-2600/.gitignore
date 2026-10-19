@@ -1,0 +1,12 @@
+# Build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+*.cmd
+modules.order
+Module.symvers
+
+# Disk images
+*.img
+*.qcow2
