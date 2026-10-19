@@ -1,0 +1,21 @@
+Windows Registry Editor Version 5.00
+
+; hidefiles.reg - TP04 Exercice 3 : enregistrement du minifilter HideFiles
+;
+; A importer avec : regedit /s hidefiles.reg
+; (apres avoir copie HideFiles.sys dans C:\Windows\System32\drivers\)
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\HideFiles]
+"Type"=dword:00000002
+"Start"=dword:00000003
+"ErrorControl"=dword:00000001
+"ImagePath"="\\SystemRoot\\System32\\drivers\\HideFiles.sys"
+"DisplayName"="TP04 HideFiles Minifilter"
+"Group"="FSFilter Activity Monitor"
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\HideFiles\Instances]
+"DefaultInstance"="HideFiles Instance"
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\HideFiles\Instances\HideFiles Instance]
+"Altitude"="370000"
+"Flags"=dword:00000000

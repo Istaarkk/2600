@@ -1,0 +1,21 @@
+Windows Registry Editor Version 5.00
+
+; filter.reg - TP02 Exercice 2 : enregistrement du minifilter LogFilter
+;
+; A importer avec : regedit /s filter.reg
+; (apres avoir copie LogFilter.sys dans C:\Windows\System32\drivers\)
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LogFilter]
+"Type"=dword:00000002
+"Start"=dword:00000003
+"ErrorControl"=dword:00000001
+"ImagePath"="\\SystemRoot\\System32\\drivers\\LogFilter.sys"
+"DisplayName"="TP02 Log Minifilter"
+"Group"="FSFilter Activity Monitor"
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LogFilter\Instances]
+"DefaultInstance"="LogFilter Instance"
+
+[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LogFilter\Instances\LogFilter Instance]
+"Altitude"="370000"
+"Flags"=dword:00000000
