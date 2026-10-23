@@ -85,8 +85,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         return status;
     }
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]         = EchoCreateClose;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]          = EchoCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = EchoCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = EchoCreateClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = EchoDeviceControl;
     DriverObject->DriverUnload = EchoUnload;
 

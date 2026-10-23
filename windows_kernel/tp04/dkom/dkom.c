@@ -97,8 +97,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         return status;
     }
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]         = DkomCreateClose;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]          = DkomCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = DkomCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = DkomCreateClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = DispatchIoControl;
     DriverObject->DriverUnload = DkomUnload;
     deviceObject->Flags |= DO_BUFFERED_IO;

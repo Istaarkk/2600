@@ -21,7 +21,7 @@ OB_PREOP_CALLBACK_STATUS PreOperationCallback(
     if (OperationInformation->ObjectType != *PsProcessType)
         return OB_PREOP_SUCCESS;
 
-    protectedPid = InterlockedCompareExchange(&gProtectedPid, 0, 0);
+    protectedPid = gProtectedPid;
     if (protectedPid == 0)
         return OB_PREOP_SUCCESS;
 
@@ -123,8 +123,8 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
         return status;
     }
 
-    DriverObject->MajorFunction[IRP_MJ_CREATE]         = ProtectorCreateClose;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE]          = ProtectorCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = ProtectorCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = ProtectorCreateClose;
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = ProtectorDeviceControl;
     DriverObject->DriverUnload = ProtectorUnload;
     deviceObject->Flags |= DO_BUFFERED_IO;
@@ -133,16 +133,14 @@ NTSTATUS DriverEntry(_In_ PDRIVER_OBJECT DriverObject, _In_ PUNICODE_STRING Regi
     RtlInitUnicodeString(&altitude, L"370000");
 
     RtlZeroMemory(operationRegistration, sizeof(operationRegistration));
-    operationRegistration[0].ObjectType   = PsProcessType;
+    operationRegistration[0].ObjectType    = PsProcessType;
     operationRegistration[0].Operations   = OB_OPERATION_HANDLE_CREATE | OB_OPERATION_HANDLE_DUPLICATE;
     operationRegistration[0].PreOperation = PreOperationCallback;
-    operationRegistration[0].PostOperation = NULL;
 
     RtlZeroMemory(&callbackRegistration, sizeof(callbackRegistration));
     callbackRegistration.Version = OB_FLT_REGISTRATION_VERSION;
     callbackRegistration.OperationRegistrationCount = 1;
     callbackRegistration.Altitude = altitude;
-    callbackRegistration.RegistrationContext = NULL;
     callbackRegistration.OperationRegistration = operationRegistration;
 
     status = ObRegisterCallbacks(&callbackRegistration, &gRegistrationHandle);
